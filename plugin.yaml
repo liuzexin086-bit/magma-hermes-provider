@@ -1,0 +1,33 @@
+name: magma
+description: "MAGMA Multi-Graph Agentic Memory for Hermes Agent (ACL 2026). Auto-records conversation events into 4 orthogonal relation graphs — temporal, semantic, causal, entity — with intent-aware traversal retrieval."
+version: "1.0.0"
+author: "Based on MAGMA by Dongming Jiang, Yi Li, Guanpeng Li, Bingzhe Li (UT Dallas & UF)"
+manifest_version: 1
+type: memory
+license: MIT
+
+installation:
+  pip:
+    - numpy>=1.24.0
+    - networkx>=3.0
+
+activation:
+  config_key: memory.provider
+  config_value: magma
+
+post_install: |
+  ## MAGMA Memory Provider installed successfully!
+
+  1. Activate it:
+     ```
+     hermes config set memory.provider magma
+     ```
+
+  2. Start a new session (`/reset`) to begin automatic event recording.
+
+  3. Optional: install sentence-transformers for better semantic embeddings:
+     ```
+     pip install sentence-transformers
+     ```
+
+  See README.md for full documentation.

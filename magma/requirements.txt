@@ -1,0 +1,16 @@
+# MAGMA Memory Provider dependencies
+# Core (always needed):
+numpy>=1.24.0
+
+# Graph storage:
+networkx>=3.0
+
+# Optional: sentence-transformers for local semantic embeddings
+# pip install sentence-transformers
+# (Without it, falls back to character-n-gram embedding)
+
+# Optional: OpenAI embeddings (requires OPENAI_API_KEY env var)
+# pip install openai
+
+# Optional: FAISS for faster vector search on large stores
+# pip install faiss-cpu  # or faiss-gpu
