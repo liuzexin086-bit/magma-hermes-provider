@@ -31,6 +31,7 @@ from .graph_db import (
 )
 from .vector_db import VectorDB, create_vector_db
 from .keyword_enrichment import KeywordEnricher
+from .distiller import Distiller, DECAY_FACTOR, PRUNE_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
@@ -214,6 +215,12 @@ class TRGMemory:
         ts = timestamp or datetime.now()
         meta = metadata or {}
 
+        # Skip very short events (under 5 chars) — just noise
+        if len(content.strip()) < 5:
+            content = content.strip()
+            if not content:
+                return ""
+
         # Extract entities and keywords
         entities = meta.get("entities", [])
         if not entities:
@@ -312,15 +319,21 @@ class TRGMemory:
         return list(dict.fromkeys(c for c in candidates if c not in stop))[:10]
 
     def _create_semantic_links(self, node: EventNode, max_links: int = 5):
-        """Connect a new node to semantically similar existing nodes."""
+        """Connect a new node to semantically similar existing nodes.
+        
+        Only searches recent events (last 100) for efficiency.
+        """
         if self.graph.node_count() <= 1:
             return
+
+        # Only search recent events for efficiency
+        search_k = min(max_links * 3, self.graph.node_count() - 1, 50)
 
         # Find similar via vector search (excluding self)
         results = self.vector_db.search(
             np.array(node.embedding, dtype=np.float32) if node.embedding
             else self._embed_text(node.content),
-            k=max_links + 1,
+            k=search_k + 1,
         )
         count = 0
         for vid, score, _ in results:
@@ -409,6 +422,57 @@ class TRGMemory:
             node_id[:8], len(neighbours), my_entities[:3],
         )
 
+    # ---- Decay / Forgetting ---------------------------------------------
+
+    def apply_decay(self, turns: int = 1) -> int:
+        """Decay all edge weights by DECAY_FACTOR per turn.
+
+        Also decays importance attribute on nodes.
+        Returns number of edges pruned.
+        """
+        # Decay edge weights
+        for link_id in list(self.graph._edges.keys()):
+            link = self.graph.get_edge(link_id)
+            if link is None:
+                continue
+            link.weight *= (DECAY_FACTOR ** turns)
+            if link.weight < PRUNE_THRESHOLD:
+                self.graph._remove_edge(link_id)
+
+        # Decay node importance
+        for node in self.graph.all_nodes():
+            imp = node.attributes.get("importance", 1.0)
+            imp *= (DECAY_FACTOR ** turns)
+            node.attributes["importance"] = imp
+
+        return 0  # prune now happens inline
+
+    def prune_edges(self, threshold: float = PRUNE_THRESHOLD) -> int:
+        """Remove edges below threshold. Returns count removed."""
+        count = 0
+        for link_id in list(self.graph._edges.keys()):
+            link = self.graph.get_edge(link_id)
+            if link and link.weight < threshold:
+                self.graph._remove_edge(link_id)
+                count += 1
+        return count
+
+    def access_note(self, note_id: str) -> bool:
+        """Mark a note as accessed — refreshes importance and boosts edges.
+
+        Returns True if the node was found.
+        """
+        node = self.graph.get_node(note_id)
+        if node is None:
+            return False
+        # Refresh importance
+        node.attributes["importance"] = 1.0
+        # Boost nearby edges
+        for nbr_id, link_list in self.graph.get_neighbors(note_id):
+            for link in link_list:
+                link.weight = min(link.weight * 1.5, 1.0)
+        return True
+
     def request_consolidation(self) -> None:
         """Manually trigger consolidation for all events (blocking call for shutdown)."""
         all_nodes = self.graph.all_nodes()
@@ -438,6 +502,10 @@ class TRGMemory:
 
         Returns: (formatted_context_string, nodes_list, edges_list)
         """
+        # Fast path: empty graph
+        if self.graph.node_count() == 0:
+            return "(No relevant memory found.)", [], []
+
         # 1. Enrich query
         enriched_query = self.keyword_enricher.enrich_query(query_text)
 
@@ -562,7 +630,11 @@ class TRGMemory:
 
         # Temporal decay: older events get slightly lower score
         if node.timestamp:
-            age_days = (datetime.now() - node.timestamp).total_seconds() / 86400
+            now = datetime.now()
+            ts = node.timestamp
+            if ts.tzinfo and not now.tzinfo:
+                ts = ts.replace(tzinfo=None)
+            age_days = (now - ts).total_seconds() / 86400
             score -= age_days * 0.1
 
         return max(score, 0.0)
@@ -570,13 +642,18 @@ class TRGMemory:
     # ---- Statistics & Status ---------------------------------------------
 
     def status(self) -> Dict[str, Any]:
-        return {
+        s = {
             "events": self.graph.node_count(),
             "edges": self.graph.edge_count(),
             "vector_entries": self.vector_db.size(),
             "consolidation_queue": self._consolidation_queue.qsize(),
             "stats": dict(self.stats),
         }
+        # Add vault note count if note_store available
+        ns = getattr(self, 'note_store', None)
+        if ns:
+            s['vault_notes'] = ns.note_count()
+        return s
 
     # ---- Persistence ------------------------------------------------------
 

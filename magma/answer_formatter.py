@@ -163,7 +163,11 @@ class AnswerFormatter:
                 if term in content_lower:
                     s += 2.0
             # penalize older nodes slightly
-            age_hours = (datetime.now() - node.timestamp).total_seconds() / 3600
+            now = datetime.now()
+            ts = node.timestamp
+            if ts.tzinfo and not now.tzinfo:
+                ts = ts.replace(tzinfo=None)
+            age_hours = (now - ts).total_seconds() / 3600
             s -= age_hours * 0.001
             return s
 
