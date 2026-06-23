@@ -1,15 +1,16 @@
 """
-MAGMA Memory Provider — Two-Layer Memory: Index + Vault
+MAGMA Memory Provider — Wiki Vault Architecture
 
 Architecture:
-  - MAGMA graph: lightweight index (summary + entities + vault_path)
-  - Obsidian vault: full content as .md files in E:\\obsidian_hermes\\hermes\\magma\\
+  - Vault: consolidated wiki docs in E:\\obsidian_hermes\\hermes\\magma\\
+  - Each doc is a wiki page with timestamped sections + timeline
+  - New content classified into categories and appended to existing docs
 
 Flow:
-  sync_turn → distill → write vault.md → store summary+path in MAGMA
-  prefetch  → return summaries + vault paths (lightweight)
-  on demand → magma_read_note() reads full vault .md
-  forgetting → edge weights decay each turn, pruned below threshold
+  sync_turn → distill → classify → append_to_wiki_category_doc
+  prefetch → search vault wiki docs directly
+  on demand → magma_read_note() reads full wiki doc
+  forgetting → handled by distillation
 """
 
 from __future__ import annotations

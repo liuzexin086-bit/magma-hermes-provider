@@ -2,19 +2,20 @@
 
 **Multi-Graph Agentic Memory — ACL 2026 Main Conference.**
 
-A pluggable memory provider that brings the [MAGMA](https://arxiv.org/abs/2601.03236) architecture to [Hermes Agent](https://hermes-agent.nousresearch.com). Every conversation turn is automatically recorded as a graph node, interlinked across four orthogonal relation types — temporal, semantic, causal, and entity — enabling intent-aware retrieval via graph traversal rather than flat keyword search.
+A pluggable memory provider that brings the [MAGMA](https://arxiv.org/abs/2601.03236) architecture to [Hermes Agent](https://hermes-agent.nousresearch.com).
+
+**v2.0 Update (2026-06-23):** Architecture simplified from two-layer (index + graph) to a **Wiki Vault** — consolidated category docs with timestamped sections, timeline tables, and [[wiki links]]. See [Architecture](#architecture) below.
 
 ---
 
 ## Features
 
-- **Automatic event ingestion.** Each user/assistant turn is stored as a structured event node with content, embedding, timestamp, entities, and keywords.
-- **Four orthogonal relation graphs.** `TEMPORAL` (strict time chain), `SEMANTIC` (cosine-similarity clustering), `CAUSAL` (LLM-inferred entailment), `ENTITY` (cross-event entity linking).
-- **Intent-aware retrieval.** Queries are classified as *Why*, *When*, *Entity*, or *General* — traversal weights shift dynamically to prioritise the relevant edge type (MAGMA Eq. 5–6).
-- **Dual-stream memory evolution.** Fast Path ingests events synchronously (vector index + temporal backbone); Slow Path asynchronously infers causal and entity links in the background.
-- **Zero compulsory external dependencies.** Ships with a character n-gram embedder and NumPy-based brute-force vector search. Optionally use `sentence-transformers`, OpenAI embeddings, or FAISS for larger stores.
-- **Persistent across sessions.** Graph state, vectors, and metadata are serialised to `$HERMES_HOME/magma/` and restored on restart.
-- **Coexists with built-in memory.** The existing `memory` tool (`MEMORY.md` / `USER.md`) operates independently; MAGMA adds an additional graph layer on top.
+- **Wiki-style memory vault.** Each conversation turn is distilled and appended to one of 6 category docs (curve design, system architecture, MAGMA, Hermes config, pig industry, automation philosophy).
+- **Timestamped sections.** Every entry carries the decision date. Each doc ends with a **⏳ 决策演进** (Decision Timeline) table.
+- **[[Wiki links]]** between related docs for cross-referencing.
+- **Intent-aware classification.** Content is automatically classified into the right category by keyword matching.
+- **Persistent across sessions.** Wiki docs are stored in `E:\obsidian_hermes\hermes\magma\` and viewable in any Markdown or Obsidian editor.
+- **Zero compulsory external dependencies.** Pure Python, no PyTorch/sentence-transformers required.
 
 ---
 
@@ -51,22 +52,71 @@ Once activated, the provider works transparently:
 
 | Trigger | Behaviour |
 |---------|-----------|
-| Every `sync_turn()` | User + assistant messages are ingested as `EventNode`s with auto-extracted entities, keywords, temporal links, and semantic links. |
-| `prefetch(query)` | Before each LLM call, MAGMA runs intent-aware graph traversal and injects relevant context as a structured, provenance-tagged block. |
-| `magma_search` tool | Manual graph query. Supports `intent` override and `max_results` limit. |
-| `magma_status` tool | Returns event count, edge count, vector DB size, consolidation status. |
+| Every `sync_turn()` | Conversation is distilled → classified → appended to the appropriate wiki doc |
+| `prefetch(query)` | Searches wiki docs and injects relevant sections as context |
+| `magma_search` tool | Full-text search across all wiki docs |
+| `magma_read_note` tool | Read a specific wiki doc or search by keyword |
+| `magma_status` tool | Returns wiki doc count, vault path |
 
 **Example — manual query:**
 
 ```
-Use magma_search to find what we discussed about PostgreSQL.
+Use magma_search to find what we discussed about creep feed.
 ```
 
-**With explicit intent hint:**
+---
+
+## Architecture
+
+### Wiki Vault
+
+Instead of the original two-layer design (index + graph), MAGMA now maintains a **wiki vault** at `E:\obsidian_hermes\hermes\magma\`:
 
 ```
-Use magma_search with intent=why to investigate why we chose PostgreSQL over MySQL.
+magma/
+├── 奶爸机-曲线设计.md          # SmartMilk curve: formula, knobs, feedback
+├── 奶爸机-系统架构.md          # System: data collection, MCU, Flask
+├── MAGMA-记忆架构.md           # MAGMA memory evolution & design decisions
+├── Hermes-配置工具.md          # Hermes config, performance, deployment
+├── 生猪行业-动保.md            # Pig cycle, prices, industry research
+├── 养殖自动化-产品哲学.md      # Automation principles, ROI, user research
+└── index.json                  # Lightweight index for backward compat
 ```
+
+### Each Wiki Doc Contains
+
+```
+# 奶爸机-曲线设计
+
+## 📐 曲线结构
+### 四段式 21 天饲喂曲线（2026-06-17 确认）
+...
+
+## 🎛️ 旋钮系统
+### #8 教槽过渡 — creepFactor（2026-06-21 决策）
+...
+
+## ⏳ 决策演进
+| 时间 | 事件 | 影响 |
+|------|------|------|
+| 06-17 | 首次提出四段式曲线 | 起步→爬坡→平台→控奶 |
+| 06-21 | 教槽→趋势反馈 | creepFactor 0.5/1.0/1.4x |
+
+**🔗 相关笔记**：[[奶爸机-系统架构]] | [[养殖自动化-产品哲学]]
+```
+
+### Classification
+
+New content is auto-classified by keyword matching into one of 6 categories:
+
+| Category | Keywords | Target Doc |
+|----------|----------|------------|
+| Curve Design | 曲线, 教槽, 腹泻, 旋钮, FCR, TW | 奶爸机-曲线设计.md |
+| System | parameters.py, MCU, Flask, PyInstaller | 奶爸机-系统架构.md |
+| MAGMA | MAGMA, 记忆, vault, 索引 | MAGMA-记忆架构.md |
+| Hermes | config, Desktop GUI, profile, sensenova | Hermes-配置工具.md |
+| Pig Industry | 猪周期, 猪价, 动保, 日报 | 生猪行业-动保.md |
+| Automation | 自动化, ROI, 饲养员, 产品哲学 | 养殖自动化-产品哲学.md |
 
 ---
 
@@ -76,82 +126,56 @@ Optional: create `$HERMES_HOME/magma_config.json`:
 
 ```json
 {
-  "persist_dir": "/path/to/custom/storage",
+  "vault_dir": "E:/obsidian_hermes/hermes/magma",
   "embedding": "minilm",
-  "max_events": 10000,
-  "enable_consolidation": true
+  "max_events": 10000
 }
 ```
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `embedding` | `"minilm"`, `"openai"`, `"char"` | `"minilm"` | Embedding backend. `minilm` uses sentence-transformers if installed, otherwise falls back to `char`. |
-| `persist_dir` | string | `$HERMES_HOME/magma/` | Directory for graph state persistence. |
-| `max_events` | integer | 10000 | Maximum events before oldest 10% are pruned. |
-| `enable_consolidation` | bool | `true` | Enable background causal/entity inference. |
-
-### Embedding Backends
-
-| Backend | Quality | Dependencies |
-|---------|---------|--------------|
-| `char` | Low (fallback) | None |
-| `minilm` (default) | Medium | `sentence-transformers` + PyTorch (optional) |
-| `openai` | High | `openai` + `OPENAI_API_KEY` env var |
+| `vault_dir` | string | `E:/obsidian_hermes/hermes/magma` | Path to wiki vault directory |
+| `embedding` | `"minilm"`, `"openai"`, `"char"` | `"minilm"` | Embedding backend (minimal effect in wiki mode) |
+| `max_events` | integer | 10000 | Maximum events before oldest 10% pruned |
 
 ---
 
-## Architecture
+## Upgrade from v1.x
 
-```
-┌────────────────────────────────────────────────────────────┐
-│                    Hermes Agent                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  MemoryManager                                        │  │
-│  │  ├─ builtin (MEMORY.md / USER.md)                    │  │
-│  │  └─ MAGMA (multi-graph)                               │  │
-│  └──────────────────────────────────────────────────────┘  │
-│           │                        │                        │
-│     prefetch()               sync_turn()                    │
-│           ▼                        ▼                        │
-│  ┌──────────────────────────────────────────────────┐       │
-│  │  TRGMemory Engine                                 │       │
-│  │                                                   │       │
-│  │  ┌──────────┐  ┌──────────┐  ┌───────────────┐  │       │
-│  │  │ Graph DB │  │ VectorDB │  │ Query Engine   │  │       │
-│  │  │NetworkX  │  │ NumPy/   │  │ Intent classify│  │       │
-│  │  │4 graphs  │  │ FAISS    │  │ Beam Search    │  │       │
-│  │  └──────────┘  └──────────┘  └───────────────┘  │       │
-│  │                                                   │       │
-│  │  Fast Path: sync → add_event()                   │       │
-│  │  Slow Path: async → consolidate()                │       │
-│  └──────────────────────────────────────────────────┘       │
-└────────────────────────────────────────────────────────────┘
+If you have v1.x installed (two-layer index + graph), upgrade as follows:
+
+```bash
+# 1. Pull the new code
+cd ~/.hermes/plugins/magma/
+git pull origin main
+
+# 2. (Optional) Archive old individual notes
+mkdir -p archive
+mv *.md archive/ 2>/dev/null
+
+# 3. The provider auto-detects the new vault structure
+# New sync_turn calls will now append to wiki docs instead of creating new files
 ```
 
-### File Layout
+The old index.json is preserved for backward compatibility — search will first check wiki docs, then fall back to the old index.
+
+---
+
+## File Layout
 
 ```
 magma/
-├── __init__.py              # MemoryProvider implementation (Hermes lifecycle)
-├── graph_db.py              # NetworkX-backed multi-graph (4 edge types)
-├── vector_db.py             # Vector storage (NumPy brute-force / FAISS)
-├── trg_memory.py            # Core engine: ingestion, traversal, consolidation
-├── keyword_enrichment.py    # TF-IDF-like keyword extraction
-├── temporal_parser.py       # Relative time expression resolution
-└── answer_formatter.py      # Structure-aware context linearization
+├── __init__.py              # MemoryProvider implementation
+├── note_store.py            # Wiki vault management (classify, append, search)
+├── distiller.py             # Content distillation from conversation turns
+├── graph_db.py              # NetworkX-backed multi-graph (legacy, kept for compat)
+├── vector_db.py             # Vector storage (legacy)
+├── trg_memory.py            # Core engine (legacy)
+├── keyword_enrichment.py    # Keyword extraction
+├── temporal_parser.py       # Time parsing
+├── answer_formatter.py      # Output formatting
+└── requirements.txt         # Dependencies
 ```
-
----
-
-## Dependencies
-
-| Package | Required | Purpose |
-|---------|----------|---------|
-| `numpy` | Yes | Vector operations |
-| `networkx` | Yes | In-memory graph storage |
-| `sentence-transformers` | Optional | Local semantic embeddings (`minilm` backend) |
-| `openai` | Optional | OpenAI embedding API (`openai` backend) |
-| `faiss-cpu` | Optional | Faster vector search for large stores |
 
 ---
 
