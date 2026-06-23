@@ -196,43 +196,59 @@ class NoteStore:
         return "\n".join(lines[start:end])
 
     def search_notes(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        """Search the section-level index first. Lightweight, no full-text scan."""
         ql = query.lower()
-        results = []
-        for wiki_file in sorted(self.vault_dir.glob("*.md")):
-            if wiki_file.name == _INDEX_FILE:
-                continue
-            content = wiki_file.read_text(encoding="utf-8")
-            lines = content.split("\n")
-            section = ""
-            for line in lines:
-                if line.startswith("### ") or line.startswith("## "):
-                    section = line.strip("# ").strip()
-                if ql in line.lower():
-                    results.append({
-                        "note_id": wiki_file.stem,
-                        "title": wiki_file.stem,
-                        "summary": line.strip()[:200],
-                        "entities": [section] if section else [],
-                        "importance": 1.0,
-                        "created_at": "",
-                        "filename": wiki_file.name,
-                        "score": 5 if line.startswith("#") else 3,
-                    })
-                    if len(results) >= max_results * 2:
-                        break
-
         index = self._load_index()
+        results = []
+
+        # Index-first: score by title/summary/entities
         for nid, meta in index.items():
             title = meta.get("title", "")
             summary = meta.get("summary", "")
-            if ql in title.lower() or ql in summary.lower():
+            entities = " ".join(meta.get("entities", []))
+            section = meta.get("section", "")
+
+            score = 0
+            if ql in title.lower():
+                score += 5
+            if ql in summary.lower():
+                score += 3
+            if ql in entities.lower():
+                score += 2
+
+            if score > 0:
                 results.append({
-                    "note_id": nid, "title": title, "summary": summary[:200],
+                    "note_id": nid,
+                    "title": title,
+                    "summary": summary[:200],
                     "entities": meta.get("entities", []),
                     "importance": meta.get("importance", 1.0),
                     "created_at": meta.get("created_at", ""),
-                    "filename": meta.get("filename", ""), "score": 10,
+                    "filename": meta.get("filename", ""),
+                    "section": section,
+                    "score": score,
                 })
+
+        # Fallback: full-text scan wiki docs if index has nothing
+        if not results:
+            for wiki_file in sorted(self.vault_dir.glob("*.md")):
+                if wiki_file.name == _INDEX_FILE:
+                    continue
+                content = wiki_file.read_text(encoding="utf-8")
+                for line in content.split("\n"):
+                    if ql in line.lower():
+                        results.append({
+                            "note_id": wiki_file.stem,
+                            "title": wiki_file.stem,
+                            "summary": line.strip()[:200],
+                            "entities": [],
+                            "importance": 1.0,
+                            "created_at": "",
+                            "filename": wiki_file.name,
+                            "section": "",
+                            "score": 3,
+                        })
+                        break
 
         results.sort(key=lambda x: (-x["score"], -x.get("importance", 1)))
         return results[:max_results]
@@ -257,18 +273,79 @@ class NoteStore:
         self._index_path().write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def rebuild_index(self) -> int:
+        """Scan wiki docs and build section-level index with summaries."""
         index = {}
         for f in sorted(self.vault_dir.glob("*.md")):
             if f.name == _INDEX_FILE:
                 continue
+            content = f.read_text(encoding="utf-8")
+            lines = content.split("\n")
+
+            current_section = ""
+            current_summary = ""
+            current_entities = []
+            collector = []
+
+            for line in lines:
+                if line.startswith("### "):
+                    # Save previous section
+                    if current_section and current_summary:
+                        sid = f"{f.stem}_{current_section[:30]}"
+                        index[sid] = {
+                            "title": current_section,
+                            "summary": current_summary[:200],
+                            "entities": current_entities[:10],
+                            "importance": 1.0,
+                            "created_at": datetime.now().isoformat(),
+                            "source": "wiki_doc",
+                            "filename": f.name,
+                            "section": current_section,
+                        }
+                    current_section = line.strip("# ").strip()
+                    current_summary = ""
+                    current_entities = []
+                    collector = []
+                elif line.startswith("> ") and current_section and not current_summary:
+                    current_summary = line.strip("> ").strip()
+                elif current_section and not current_summary and line.strip():
+                    # First non-empty, non-heading line after section is summary
+                    current_summary = line.strip()[:200]
+
+                # Collect entities from the section
+                if current_section and line.strip():
+                    for word in re.findall(r'\b[A-Z][A-Z0-9]{2,}\b', line):
+                        if word not in current_entities:
+                            current_entities.append(word)
+                    for word in re.findall(r'[\d.]+[元头只%天kgmlL℃]', line):
+                        if word not in current_entities:
+                            current_entities.append(word)
+
+            # Last section
+            if current_section and current_summary:
+                sid = f"{f.stem}_{current_section[:30]}"
+                index[sid] = {
+                    "title": current_section,
+                    "summary": current_summary[:200],
+                    "entities": current_entities[:10],
+                    "importance": 1.0,
+                    "created_at": datetime.now().isoformat(),
+                    "source": "wiki_doc",
+                    "filename": f.name,
+                    "section": current_section,
+                }
+
+            # Also store doc-level entry for direct file lookup
             index[f.stem] = {
                 "title": f.stem, "summary": "", "entities": [],
                 "importance": 1.0,
                 "created_at": datetime.now().isoformat(),
                 "source": "wiki_doc", "filename": f.name,
+                "section": "",
             }
-        self._index_path().write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("Rebuilt wiki index: %d docs", len(index))
+
+        self._index_path().write_text(
+            json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("Rebuilt section-level index: %d entries", len(index))
         return len(index)
 
     def note_count(self) -> int:
