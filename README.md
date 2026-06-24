@@ -14,7 +14,7 @@ A pluggable memory provider that brings the [MAGMA](https://arxiv.org/abs/2601.0
 - **Timestamped sections.** Every entry carries the decision date. Each doc ends with a **⏳ 决策演进** (Decision Timeline) table.
 - **[[Wiki links]]** between related docs for cross-referencing.
 - **Intent-aware classification.** Content is automatically classified into the right category by keyword matching.
-- **Persistent across sessions.** Wiki docs are stored in `E:\obsidian_hermes\hermes\magma\` and viewable in any Markdown or Obsidian editor.
+- **Persistent across sessions.** Wiki docs are stored in a configurable vault directory (default: `~/hermes/magma/`) and are plain Markdown viewable in any editor.
 - **Zero compulsory external dependencies.** Pure Python, no PyTorch/sentence-transformers required.
 
 ---
@@ -61,29 +61,23 @@ Once activated, the provider works transparently:
 **Example — manual query:**
 
 ```
-Use magma_search to find what we discussed about creep feed.
+Use magma_search to find what we discussed about the feed transition curve.
 ```
 
 ---
 
 ## Query Pipeline (v2.1 — 2026-06-24)
 
-When Hermes queries MAGMA for knowledge, it follows this deterministic pipeline:
+When no content matches an existing category, MAGMA does not discard it:
 
-```
-MAGMA search → broaden query → retry
-   ↓ not found
- Topic within known domains?
-   ↓ Yes → Create new wiki doc / append to existing → persist to vault
-   ↓ No  → web_search → Create new wiki doc → persist to vault
-   ↓ Nothing found → Report "not found" honestly
-```
+1. **Extract topic** from the unmatched content (Chinese noun phrase or English keywords)
+2. **Auto-create a new wiki doc** with that topic as its title
+3. **Persist** the new doc to the vault
+4. **Register** the new category so subsequent matching content reuses it
+
+If web search is available, it may be used to enrich the new entry before writing.
 
 **Hard constraint:** Never delete existing distilled knowledge or original notes. Only add, never remove.
-
-**Known domains (auto-triggered):** livestock automation, SmartMilk (奶爸机), pig/swine industry, animal health (动保), Shanchuan Biology (山川生物), Anyou (安佑), pig cycle (猪周期), plant essential oils (植物精油), product philosophy.
-
-**session_search (historical transcript recall)** is excluded from the auto-pipeline. It is used only when the user explicitly asks to revisit a past conversation.
 
 ---
 
@@ -91,39 +85,39 @@ MAGMA search → broaden query → retry
 
 ### Wiki Vault
 
-Instead of the original two-layer design (index + graph), MAGMA now maintains a **wiki vault** at `E:\obsidian_hermes\hermes\magma\`:
+Instead of the original two-layer design (index + graph), MAGMA now maintains a **wiki vault** at a configurable directory (default: `~/hermes/magma/`):
 
 ```
 magma/
-├── 奶爸机-曲线设计.md          # SmartMilk curve: formula, knobs, feedback
-├── 奶爸机-系统架构.md          # System: data collection, MCU, Flask
-├── MAGMA-记忆架构.md           # MAGMA memory evolution & design decisions
-├── Hermes-配置工具.md          # Hermes config, performance, deployment
-├── 生猪行业-动保.md            # Pig cycle, prices, industry research
-├── 养殖自动化-产品哲学.md      # Automation principles, ROI, user research
-└── index.json                  # Lightweight index for backward compat
+├── curve-design.md              # Model curve: formulas, parameters, feedback
+├── system-architecture.md       # App system: data pipeline, backend, hardware
+├── memory-architecture.md       # MAGMA memory evolution & design decisions
+├── agent-config.md              # Agent config, performance, deployment
+├── industry-research.md         # Domain research notes, market data
+├── automation-philosophy.md     # Design principles, ROI, user research
+└── index.json                   # Lightweight index for backward compat
 ```
 
 ### Each Wiki Doc Contains
 
 ```
-# 奶爸机-曲线设计
+# curve-design
 
-## 📐 曲线结构
-### 四段式 21 天饲喂曲线（2026-06-17 确认）
+## 📐 Components
+### 3-stage feed curve (2026-06-17 confirmed)
 ...
 
-## 🎛️ 旋钮系统
-### #8 教槽过渡 — creepFactor（2026-06-21 决策）
+## 🎛️ Parameters
+### #8 Transition rate — transitionFactor (2026-06-21 decision)
 ...
 
-## ⏳ 决策演进
-| 时间 | 事件 | 影响 |
-|------|------|------|
-| 06-17 | 首次提出四段式曲线 | 起步→爬坡→平台→控奶 |
-| 06-21 | 教槽→趋势反馈 | creepFactor 0.5/1.0/1.4x |
+## ⏳ Decision Log
+| Date | Event | Impact |
+|------|-------|--------|
+| 06-17 | Initial 3-stage curve proposed | ramp→plateau→taper |
+| 06-21 | Transition feedback added | transitionFactor 0.5/1.0/1.4x |
 
-**🔗 相关笔记**：[[奶爸机-系统架构]] | [[养殖自动化-产品哲学]]
+**🔗 Related**：[[system-architecture]] | [[automation-philosophy]]
 ```
 
 ### Classification
@@ -133,12 +127,12 @@ The baseline 6 categories are predefined; new topics automatically create new do
 
 | Category | Keywords | Target Doc |
 |----------|----------|------------|
-| Curve Design | 曲线, 教槽, 腹泻, 旋钮, FCR, TW | 奶爸机-曲线设计.md |
-| System | parameters.py, MCU, Flask, PyInstaller | 奶爸机-系统架构.md |
-| MAGMA | MAGMA, 记忆, vault, 索引 | MAGMA-记忆架构.md |
-| Hermes | config, Desktop GUI, profile, sensenova | Hermes-配置工具.md |
-| Pig Industry | 猪周期, 猪价, 动保, 日报 | 生猪行业-动保.md |
-| Automation | 自动化, ROI, 饲养员, 产品哲学 | 养殖自动化-产品哲学.md |
+| Curve Design | curve, feed, transition, parameters, FCR | curve-design.md |
+| System | MCU, Flask, pipeline, backend, hardware | system-architecture.md |
+| Memory | MAGMA, memory, vault, index, retrieval | memory-architecture.md |
+| Agent | config, profile, tools, provider | agent-config.md |
+| Industry | market, industry, research, analysis | industry-research.md |
+| Philosophy | automation, philosophy, ROI, design | automation-philosophy.md |
 
 **When content doesn't match any existing category**, the system creates a new `.md` doc with an appropriate title and appends it to the vault. No content is ever rejected for missing a category.
 
@@ -150,7 +144,7 @@ Optional: create `$HERMES_HOME/magma_config.json`:
 
 ```json
 {
-  "vault_dir": "E:/obsidian_hermes/hermes/magma",
+  "vault_dir": "~/hermes/magma",
   "embedding": "minilm",
   "max_events": 10000
 }
@@ -158,7 +152,7 @@ Optional: create `$HERMES_HOME/magma_config.json`:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `vault_dir` | string | `E:/obsidian_hermes/hermes/magma` | Path to wiki vault directory |
+| `vault_dir` | string | `~/hermes/magma` | Path to wiki vault directory |
 | `embedding` | `"minilm"`, `"openai"`, `"char"` | `"minilm"` | Embedding backend (minimal effect in wiki mode) |
 | `max_events` | integer | 10000 | Maximum events before oldest 10% pruned |
 
