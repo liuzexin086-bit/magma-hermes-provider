@@ -5,8 +5,9 @@ Manages consolidated wiki docs in the Obsidian vault:
   E:\\obsidian_hermes\\hermes\\magma\\
 
 Instead of creating a new file per conversation turn, new content is
-classified into one of 6-8 category docs and appended to the relevant
-section, preserving timestamps and decision lineage.
+classified into one of 6 baseline category docs and appended to the relevant
+section. When content doesn't match any existing category, a new doc is
+auto-created with an appropriate topic name, preserving timestamps and decision lineage.
 
 Each wiki doc contains:
   - Sections with timestamps (e.g., "### 决策名称（2026-06-21）")
@@ -62,7 +63,7 @@ class NoteStore:
 
     # ---- Classification ---------------------------------------------------
 
-    def classify_content(self, text: str) -> str:
+    def classify_content(self, text: str) -> Tuple[str, bool]:
         text_lower = text.lower()
         scores = {}
         for cat, kws in WIKI_KEYWORDS.items():
@@ -70,9 +71,33 @@ class NoteStore:
             if score > 0:
                 scores[cat] = score
         if not scores:
-            return WIKI_CATEGORIES["automation"]
+            # No existing category matches — auto-create a new one
+            new_name = self._extract_topic(text)
+            new_filename = f"{new_name}.md"
+            # Register so next calls reuse it
+            new_key = re.sub(r'[^a-zA-Z0-9_]', '_', new_name.lower())[:32]
+            WIKI_CATEGORIES[new_key] = new_filename
+            WIKI_KEYWORDS[new_key] = [new_name, text.split()[0][:10] if text.split() else "new"]
+            logger.info("Auto-created new category: %s -> %s", new_name, new_filename)
+            return new_filename, True
         best_cat = max(scores, key=scores.get)
-        return WIKI_CATEGORIES[best_cat]
+        return WIKI_CATEGORIES[best_cat], False
+
+    @staticmethod
+    def _extract_topic(text: str) -> str:
+        """Extract a topic name for the new category from unmatched content."""
+        import re
+        # Prefer Chinese: first 4 consecutive CJK chars that look like a noun phrase
+        zh_matches = re.findall(r'[\u4e00-\u9fff]{2,12}', text)
+        if zh_matches:
+            # Pick the longest meaningful-looking phrase
+            best = max(zh_matches, key=len)[:20]
+            return best.replace(' ', '')
+        # Fallback: first few meaningful English words
+        words = [w for w in text.split() if len(w) > 2 and w.isalpha()][:3]
+        if words:
+            return '-'.join(words)
+        return "新分类"
 
     # ---- Wiki Append ------------------------------------------------------
 
@@ -85,7 +110,7 @@ class NoteStore:
         importance: float = 1.0,
         source: str = "",
     ) -> str:
-        category_doc = self.classify_content(content)
+        category_doc, _ = self.classify_content(content)
         wiki_path = self.vault_dir / category_doc
         ts = datetime.now()
         date_str = ts.strftime("%Y-%m-%d")

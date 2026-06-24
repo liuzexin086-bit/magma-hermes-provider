@@ -4,13 +4,13 @@
 
 A pluggable memory provider that brings the [MAGMA](https://arxiv.org/abs/2601.03236) architecture to [Hermes Agent](https://hermes-agent.nousresearch.com).
 
-**v2.0 Update (2026-06-23):** Architecture simplified from two-layer (index + graph) to a **Wiki Vault** — consolidated category docs with timestamped sections, timeline tables, and [[wiki links]]. See [Architecture](#architecture) below.
+**v2.1 Update (2026-06-24):** Dynamic classification + query pipeline documented. When MAGMA has no match for a topic, it automatically creates new wiki docs or appends to existing ones. See [Query Pipeline](#query-pipeline-v21--2026-06-24) and [Architecture](#architecture) below.
 
 ---
 
 ## Features
 
-- **Wiki-style memory vault.** Each conversation turn is distilled and appended to one of 6 category docs (curve design, system architecture, MAGMA, Hermes config, pig industry, automation philosophy).
+- **Wiki-style memory vault.** Each conversation turn is distilled and appended to one of **dynamic category docs** (6 baseline, auto-extends on new topics).
 - **Timestamped sections.** Every entry carries the decision date. Each doc ends with a **⏳ 决策演进** (Decision Timeline) table.
 - **[[Wiki links]]** between related docs for cross-referencing.
 - **Intent-aware classification.** Content is automatically classified into the right category by keyword matching.
@@ -66,6 +66,27 @@ Use magma_search to find what we discussed about creep feed.
 
 ---
 
+## Query Pipeline (v2.1 — 2026-06-24)
+
+When Hermes queries MAGMA for knowledge, it follows this deterministic pipeline:
+
+```
+MAGMA search → broaden query → retry
+   ↓ not found
+ Topic within known domains?
+   ↓ Yes → Create new wiki doc / append to existing → persist to vault
+   ↓ No  → web_search → Create new wiki doc → persist to vault
+   ↓ Nothing found → Report "not found" honestly
+```
+
+**Hard constraint:** Never delete existing distilled knowledge or original notes. Only add, never remove.
+
+**Known domains (auto-triggered):** livestock automation, SmartMilk (奶爸机), pig/swine industry, animal health (动保), Shanchuan Biology (山川生物), Anyou (安佑), pig cycle (猪周期), plant essential oils (植物精油), product philosophy.
+
+**session_search (historical transcript recall)** is excluded from the auto-pipeline. It is used only when the user explicitly asks to revisit a past conversation.
+
+---
+
 ## Architecture
 
 ### Wiki Vault
@@ -107,7 +128,8 @@ magma/
 
 ### Classification
 
-New content is auto-classified by keyword matching into one of 6 categories:
+New content is auto-classified by keyword matching into a **dynamic set of category docs**.
+The baseline 6 categories are predefined; new topics automatically create new docs:
 
 | Category | Keywords | Target Doc |
 |----------|----------|------------|
@@ -117,6 +139,8 @@ New content is auto-classified by keyword matching into one of 6 categories:
 | Hermes | config, Desktop GUI, profile, sensenova | Hermes-配置工具.md |
 | Pig Industry | 猪周期, 猪价, 动保, 日报 | 生猪行业-动保.md |
 | Automation | 自动化, ROI, 饲养员, 产品哲学 | 养殖自动化-产品哲学.md |
+
+**When content doesn't match any existing category**, the system creates a new `.md` doc with an appropriate title and appends it to the vault. No content is ever rejected for missing a category.
 
 ---
 
@@ -157,7 +181,7 @@ mv *.md archive/ 2>/dev/null
 # New sync_turn calls will now append to wiki docs instead of creating new files
 ```
 
-The old index.json is preserved for backward compatibility — search will first check wiki docs, then fall back to the old index.
+The old index.json is preserved for backward compatibility — search first checks wiki docs, then falls back to the old index.
 
 ---
 
