@@ -1,15 +1,16 @@
 """
-MAGMA Memory Provider — Wiki Vault Architecture
+MAGMA Memory Provider — Two-Level Wiki Vault Architecture
 
 Architecture:
-  - Vault: consolidated wiki docs in E:\\obsidian_hermes\\hermes\\magma\\
-  - Each doc is a wiki page with timestamped sections + timeline
-  - New content classified into categories and appended to existing docs
+  - Vault: domain folders → wiki files in E:\\obsidian_hermes\\hermes\\magma\\
+  - Two-level: (domain_folder, filename) for each entry
+  - New content classified into (domain, file) and appended as timestamped sections
+  - New domains auto-created when content doesn't match existing ones
 
 Flow:
-  sync_turn → distill → classify → append_to_wiki_category_doc
-  prefetch → search vault wiki docs directly
-  on demand → magma_read_note() reads full wiki doc
+  sync_turn → distill → classify (domain+file) → append_to_structured_wiki
+  prefetch → search vault index (domain-aware)
+  on demand → magma_read_note() reads wiki doc from domain folder
   forgetting → handled by distillation
 """
 
@@ -139,7 +140,12 @@ class MagmaMemoryProvider(MemoryProvider):
                 title = r["title"]
                 summary = r["summary"][:150]
                 entities = ", ".join(r["entities"][:4])
-                vault_path = f"E:/obsidian_hermes/hermes/magma/{r['filename']}"
+                domain = r.get("domain", "")
+                fname = r.get("filename", "")
+                if domain:
+                    vault_path = f"E:/obsidian_hermes/hermes/magma/{domain}/{fname}"
+                else:
+                    vault_path = f"E:/obsidian_hermes/hermes/magma/{fname}"
                 parts.append(
                     f"- **{title}**\n"
                     f"  {summary}...\n"

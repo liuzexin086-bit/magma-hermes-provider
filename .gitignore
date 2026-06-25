@@ -19,3 +19,4 @@ Thumbs.db
 
 # Hermes local test files
 *.hermes_home/
+.git_credentials
